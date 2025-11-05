@@ -132,7 +132,10 @@ def send_request():
         page=page_size_val
     )
 
-    client.process_data()
+    date_from = entry_date_from.get().strip()
+    date_to = entry_date_to.get().strip()
+
+    client.process_data(date_from, date_to)
 
     messagebox.showinfo("Info", "Request has been sent. Check destination folder")
 

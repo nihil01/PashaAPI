@@ -8,6 +8,13 @@ from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font, PatternFill, Alignment
 from datetime import datetime
 from pathlib import Path
+import logging
+
+logging.basicConfig(
+    filename='pasha_log.log',  # Specify the log file name
+    level=logging.INFO,  # Set the logging level (e.g., INFO, DEBUG, WARNING, ERROR, CRITICAL)
+    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the log message format
+)
 
 
 def _normalize_value(v: Any) -> Any:
@@ -45,7 +52,6 @@ class PashaBankAPIClient:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
 
-    @staticmethod
     def save_report(self, accounts_table: List[Dict[str, Any]],
                     statements_rows: List[Dict[str, Any]],
                     pos_rows: List[Dict[str, Any]],
@@ -142,11 +148,11 @@ class PashaBankAPIClient:
         final_filename = f"{date_suffix}_{filename}"
 
         if self.excel_path:
-            final_filename = str(self.excel_path.Joinpath(final_filename))
-            print("Final path: " + final_filename)
+            final_filename = str(self.excel_path.joinpath(final_filename))
+            logging.log(msg="Final path: " + final_filename, level=logging.INFO)
 
         wb.save(final_filename)
-        print(f"✅ Excel saved as: {final_filename}")
+        logging.log(msg=f"✅ Excel saved as: {final_filename}", level=logging.INFO)
         return final_filename
 
     def _setup_session(self):
@@ -159,7 +165,6 @@ class PashaBankAPIClient:
         self.session.headers["Accept"] = "application/json"
         self.session.headers["Content-Type"] = "application/json"
 
-    @staticmethod
     def _gather_statements_rows(self, account_id: str, statements_obj: Dict[str, Any]) -> List[Dict[str, Any]]:
         ops = statements_obj.get("operations", []) or []
         rows = []
@@ -238,7 +243,6 @@ class PashaBankAPIClient:
             rows.append(r)
         return rows
 
-    @staticmethod
     def _gather_pos_rows(self, account_id: str, pos_blocks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """
         Build hybrid (B1) rows for POS sheet.
@@ -311,10 +315,10 @@ class PashaBankAPIClient:
             try:
                 return resp.json()
             except ValueError:
-                print("⚠️ Response is not JSON")
+                logging.log(msg="⚠️ Response is not JSON", level=logging.INFO)
                 return {}
         except requests.RequestException as e:
-            print(f"❌ Ошибка запроса: {e} -> {url}")
+            logging.log(msg=f"❌ Ошибка запроса: {e} -> {url}", level=logging.INFO)
             return {}
     # ---------- Accounts ----------
     def _load_accounts(self) -> List[Dict[str, Any]]:
@@ -421,11 +425,11 @@ class PashaBankAPIClient:
             rows.append(row)
         return rows
 
-    def process_data(self):
-        print("Загрузка списка аккаунтов ...")
+    def process_data(self, date_from:str, date_to:str):
+        logging.log(msg="Загрузка списка аккаунтов ...", level=logging.INFO)
         accounts = self._load_accounts()
         if not accounts:
-            print("Нет аккаунтов, прекращаю.")
+            logging.log(msg="Нет аккаунтов, прекращаю.", level=logging.INFO)
             return
 
         accounts_table = self._gather_accounts_table(accounts=accounts)
@@ -436,13 +440,13 @@ class PashaBankAPIClient:
 
         for acc in accounts:
             acc_no = acc.get("accountNo")
-            print("\n" + "=" * 40)
-            print(f"Processing account: {acc_no}")
-            print("=" * 40)
+            logging.log(msg="\n" + "=" * 40, level=logging.INFO)
+            logging.log(msg=f"Processing account: {acc_no}", level=logging.INFO)
+            logging.log(msg="=" * 40, level=logging.INFO)
 
             # Statements
-            statements_obj = self.get_current_statements(acc_no)
-            stmt_rows = self._gather_statements_rows(acc_no, statements_obj)
+            statements_obj = self.get_current_statements(acc_no, date_from, date_to)
+            stmt_rows = self._gather_statements_rows(account_id=acc_no, statements_obj=statements_obj)
             all_statements_rows.extend(stmt_rows)
 
             # POS blocks (with pagination)
@@ -450,5 +454,5 @@ class PashaBankAPIClient:
             pos_rows = self._gather_pos_rows(acc_no, pos_blocks)
             all_pos_rows.extend(pos_rows)
 
-        print("\nSaving report to Excel ...")
+        logging.log(msg="\nSaving report to Excel ...", level=logging.INFO)
         self.save_report(accounts_table, all_statements_rows, all_pos_rows, filename="pasha_report.xlsx")
