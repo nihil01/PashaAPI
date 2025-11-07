@@ -1,4 +1,6 @@
 import json
+import time
+
 import requests
 from typing import Dict, Any, List, Optional
 import pandas as pd
@@ -29,11 +31,13 @@ def _normalize_value(v: Any) -> Any:
 class PashaBankAPIClient:
     """Клиент для работы с API Pasha Bank и сохранения отчёта в Excel (Accounts, Statements, POS Operations)"""
 
-    def __init__(self, excel_path: Path, jwt: str, api: str, page:str) -> None:
+    def __init__(self, excel_path: Path, jwt: str, api: str) -> None:
         self.excel_path = excel_path
         self.config_jwt = jwt
         self.config_key = api
-        self.page = page
+
+        self.page_max_count = 0
+        self.current_page = 0
 
         self.base_url = "https://openapi.pashabank.digital"
         self.accounts_list_path = "/api/v1/accounts"
@@ -43,14 +47,14 @@ class PashaBankAPIClient:
         self.session = requests.Session()
         self._setup_session()
 
-    @staticmethod
-    @deprecated("Not used anymore")
-    def _load_config(config_path: str) -> Dict[str, Any]:
-        path = Path(config_path)
-        if not path.exists():
-            raise FileNotFoundError(f"Config file not found: {config_path}")
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
+    # @staticmethod
+    # @deprecated("Not used anymore")
+    # def _load_config(config_path: str) -> Dict[str, Any]:
+    #     path = Path(config_path)
+    #     if not path.exists():
+    #         raise FileNotFoundError(f"Config file not found: {config_path}")
+    #     with open(path, "r", encoding="utf-8") as f:
+    #         return json.load(f)
 
     def save_report(self, accounts_table: List[Dict[str, Any]],
                     statements_rows: List[Dict[str, Any]],
@@ -168,6 +172,9 @@ class PashaBankAPIClient:
     def _gather_statements_rows(self, account_id: str, statements_obj: Dict[str, Any]) -> List[Dict[str, Any]]:
         ops = statements_obj.get("operations", []) or []
         rows = []
+
+        #set max page count
+
         summary = {
             "accountNo": account_id,
             "openingBalance": statements_obj.get("openingBalance", 0),
@@ -305,21 +312,37 @@ class PashaBankAPIClient:
                 rows.append(op_row)
         return rows
 
-    def _make_request(self, url: str, method: str = "GET", params: Dict = None) -> Dict:
-        try:
-            if method.upper() == "POST":
-                resp = self.session.post(url, json=params, timeout=30)
-            else:
-                resp = self.session.get(url, params=params, timeout=30)
-            resp.raise_for_status()
+    def _make_request(self, url: str, method: str = "GET", params: Dict = None, retries: int = 3) -> Dict:
+
+        for retry in range(1, retries + 1):
             try:
-                return resp.json()
-            except ValueError:
-                logging.log(msg="⚠️ Response is not JSON", level=logging.INFO)
+                if method.upper() == "POST":
+                    resp = self.session.post(url, json=params, timeout=30)
+                else:
+                    resp = self.session.get(url, params=params, timeout=30)
+                resp.raise_for_status()
+                try:
+                    return resp.json()
+                except ValueError:
+                    logging.log(msg="⚠️ Response is not JSON", level=logging.INFO)
+                    return {}
+
+            except (requests.Timeout, requests.ConnectionError) as e:
+
+                if retry < retries:
+                    logging.warning(f"⏳ Timeout/Connection error (attempt {retry}/{retries}): {e}")
+                    time.sleep(2)
+                    continue
+                else:
+                    logging.error(f"❌ Failed after {retries} attempts: {url}")
+                    return {}
+
+            except requests.RequestException as e:
+                logging.log(msg=f"❌ Ошибка запроса: {e} -> {url}", level=logging.INFO)
                 return {}
-        except requests.RequestException as e:
-            logging.log(msg=f"❌ Ошибка запроса: {e} -> {url}", level=logging.INFO)
-            return {}
+
+        return {}
+
     # ---------- Accounts ----------
     def _load_accounts(self) -> List[Dict[str, Any]]:
         base_url = self.base_url
@@ -328,6 +351,7 @@ class PashaBankAPIClient:
         response = self._make_request(url, "GET", {"accountType": "CURRENT"})
         if isinstance(response, dict):
             if "accounts" in response and isinstance(response["accounts"], list):
+
                 return response["accounts"]
             for v in response.values():
                 if isinstance(v, list):
@@ -345,13 +369,23 @@ class PashaBankAPIClient:
         path = path.replace("{accountId}", account_id)
         url = f"{base_url}{path}"
 
+        self.current_page += 1
+
         params = {
-            "pageNumber": int(self.page) or 1,
+            "pageNumber": self.current_page,
             "fromDate": date_from,
             "toDate": date_to
         }
 
         resp = self._make_request(url, "POST", params) or {}
+        logging.log(msg=f"Current request: {resp}", level=logging.INFO)
+
+        if self.page_max_count == 0:
+            logging.log(msg="Resetting max page count ...", level=logging.INFO)
+            self.page_max_count = resp.get("paginationMetaData", {}).get("totalPages") or 0
+
+        time.sleep(0.5)
+
         return {
             "operations": resp.get("operations", []),
             "openingBalance": resp.get("openingBalance", 0),
@@ -432,6 +466,10 @@ class PashaBankAPIClient:
             logging.log(msg="Нет аккаунтов, прекращаю.", level=logging.INFO)
             return
 
+        logging.info(msg=f"Current accounts: {accounts}")
+
+        accounts = [acc for acc in accounts if acc["accountNo"] != "40140EURHC0100271887"]
+
         accounts_table = self._gather_accounts_table(accounts=accounts)
 
         # collect statements and pos rows
@@ -443,16 +481,30 @@ class PashaBankAPIClient:
             logging.log(msg="\n" + "=" * 40, level=logging.INFO)
             logging.log(msg=f"Processing account: {acc_no}", level=logging.INFO)
             logging.log(msg="=" * 40, level=logging.INFO)
+            logging.log(msg=f"Date range: {date_from} - {date_to}", level=logging.INFO)
+            logging.log(msg=f"Current page: {self.current_page} / {self.page_max_count}", level=logging.INFO)
+
 
             # Statements
-            statements_obj = self.get_current_statements(acc_no, date_from, date_to)
-            stmt_rows = self._gather_statements_rows(account_id=acc_no, statements_obj=statements_obj)
-            all_statements_rows.extend(stmt_rows)
+            while self.current_page <= self.page_max_count:
+                statements_obj = self.get_current_statements(acc_no, date_from, date_to)
+
+                if (statements_obj.get("message") is not None and
+                        "there is no operations for the period" in statements_obj.get("message").lower()):
+
+                    logging.log(msg="No statements found for this account.", level=logging.INFO)
+                    continue
+
+                stmt_rows = self._gather_statements_rows(account_id=acc_no, statements_obj=statements_obj)
+                all_statements_rows.extend(stmt_rows)
 
             # POS blocks (with pagination)
             pos_blocks = self.get_pos_operations(acc_no)
             pos_rows = self._gather_pos_rows(acc_no, pos_blocks)
             all_pos_rows.extend(pos_rows)
+
+            self.current_page = 0
+            self.page_max_count = 0
 
         logging.log(msg="\nSaving report to Excel ...", level=logging.INFO)
         self.save_report(accounts_table, all_statements_rows, all_pos_rows, filename="pasha_report.xlsx")
