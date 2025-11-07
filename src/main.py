@@ -83,12 +83,6 @@ label_date_to.pack(anchor="nw", padx=5, pady=5)
 entry_date_to = ttk.Entry(root)
 entry_date_to.pack(anchor="nw", padx=8, pady=8)
 
-label_page_size = tk.Label(root, text="Page Number")
-label_page_size.pack(anchor="nw", padx=5, pady=5)
-
-entry_page_size = ttk.Entry(root)
-entry_page_size.pack(anchor="nw", padx=8, pady=8)
-
 label_jwt = tk.Label(root, text="JWT Token")
 label_jwt.pack(anchor="nw", padx=5, pady=5)
 
@@ -117,7 +111,6 @@ root.iconphoto(False, icon)
 def send_request():
     jwt_val = entry_jwt_to.get().strip()
     api_val = entry_api.get().strip()
-    page_size_val = entry_page_size.get().strip()
 
     if not jwt_val or not api_val:
         messagebox.showerror("Error", "JWT and API Token cannot be empty!")
@@ -129,7 +122,6 @@ def send_request():
         excel_path=get_default_save_dir(),
         jwt=jwt_val,
         api=api_val,
-        page=page_size_val
     )
 
     date_from = entry_date_from.get().strip()
