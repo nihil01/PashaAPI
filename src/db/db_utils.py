@@ -1,4 +1,6 @@
 import sqlite3 as sql
+import sys
+import os
 
 #pasha
 JWT_TOKEN_PASHA = ""
@@ -8,11 +10,21 @@ API_KEY_PASHA = ""
 KAPITAL_USER = ""
 KAPITAL_PASS = ""
 
+
+def resource_path(relative_path):
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
+
 def setup_connection_bank():
     global JWT_TOKEN_PASHA, API_KEY_PASHA, KAPITAL_USER, KAPITAL_PASS
 
+    db_path = resource_path("db/bank.db")
+
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
     try:
-        with sql.connect("db/bank.db") as connection:
+        with sql.connect(db_path) as connection:
             cursor = connection.cursor()
 
             cursor.executescript("""
