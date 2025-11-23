@@ -7,6 +7,7 @@ from tkinter import messagebox
 import sqlite3 as sql
 from banks_api.kapital_bank_api import KapitalBankAPI
 from banks_api.pasha_bank_api import PashaBankAPI
+from db.db_utils import resource_path
 
 def get_default_save_dir(destination: str):
     home_directory = Path.home()
@@ -158,8 +159,13 @@ def send_request_pasha(entry_date_from, entry_date_to, entry_jwt_to, entry_api):
 
 
 def save_data(bank:str, jwt: str, api_key: str):
+
+    db_path = resource_path("db/bank.db")
+
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+
     try:
-        with sql.connect("db/bank.db") as connection:
+        with sql.connect(db_path) as connection:
             cursor = connection.cursor()
 
             match bank:
