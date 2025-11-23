@@ -1,22 +1,16 @@
-import json
 import time
 
 import requests
 from typing import Dict, Any, List, Optional
 import pandas as pd
 from openpyxl import Workbook
-from openpyxl.compat import deprecated
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font, PatternFill, Alignment
 from datetime import datetime
 from pathlib import Path
 import logging
 
-logging.basicConfig(
-    filename='pasha_log.log',  # Specify the log file name
-    level=logging.INFO,  # Set the logging level (e.g., INFO, DEBUG, WARNING, ERROR, CRITICAL)
-    format='%(asctime)s - %(levelname)s - %(message)s'  # Define the log message format
-)
+from banks_api.api_logger import setup_api_logger
 
 
 def _normalize_value(v: Any) -> Any:
@@ -28,13 +22,14 @@ def _normalize_value(v: Any) -> Any:
     return v
 
 
-class PashaBankAPIClient:
+class PashaBankAPI:
     """Клиент для работы с API Pasha Bank и сохранения отчёта в Excel (Accounts, Statements, POS Operations)"""
 
-    def __init__(self, excel_path: Path, jwt: str, api: str) -> None:
+    def __init__(self, excel_path: Path) -> None:
+
         self.excel_path = excel_path
-        self.config_jwt = jwt
-        self.config_key = api
+        self.config_jwt = ""
+        self.config_key = ""
 
         self.page_max_count = 0
         self.current_page = 0
@@ -47,14 +42,6 @@ class PashaBankAPIClient:
         self.session = requests.Session()
         self._setup_session()
 
-    # @staticmethod
-    # @deprecated("Not used anymore")
-    # def _load_config(config_path: str) -> Dict[str, Any]:
-    #     path = Path(config_path)
-    #     if not path.exists():
-    #         raise FileNotFoundError(f"Config file not found: {config_path}")
-    #     with open(path, "r", encoding="utf-8") as f:
-    #         return json.load(f)
 
     def save_report(self, accounts_table: List[Dict[str, Any]],
                     statements_rows: List[Dict[str, Any]],
@@ -166,6 +153,8 @@ class PashaBankAPIClient:
         if self.config_key:
             self.session.headers["apikey"] = self.config_key
 
+        self.session.headers["User-agent"] = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+                                              " (KHTML, like Gecko) Chrome/102.0.5005.49 Safari/537.36")
         self.session.headers["Accept"] = "application/json"
         self.session.headers["Content-Type"] = "application/json"
 
@@ -459,16 +448,21 @@ class PashaBankAPIClient:
             rows.append(row)
         return rows
 
-    def process_data(self, date_from:str, date_to:str):
+    def process_data(self, date_from:str, date_to:str, jwt: str, api_key: str):
+
+        #Создать сессию перед запросами
+        self.config_jwt = jwt
+        self.config_key = api_key
+
+        self._setup_session()
+
         logging.log(msg="Загрузка списка аккаунтов ...", level=logging.INFO)
         accounts = self._load_accounts()
         if not accounts:
             logging.log(msg="Нет аккаунтов, прекращаю.", level=logging.INFO)
-            return
+            return False
 
         logging.info(msg=f"Current accounts: {accounts}")
-
-        accounts = [acc for acc in accounts if acc["accountNo"] != "40140EURHC0100271887"]
 
         accounts_table = self._gather_accounts_table(accounts=accounts)
 
@@ -486,7 +480,7 @@ class PashaBankAPIClient:
 
 
             # Statements
-            while self.current_page <= self.page_max_count:
+            while self.current_page < self.page_max_count:
                 statements_obj = self.get_current_statements(acc_no, date_from, date_to)
 
                 if (statements_obj.get("message") is not None and
@@ -508,3 +502,4 @@ class PashaBankAPIClient:
 
         logging.log(msg="\nSaving report to Excel ...", level=logging.INFO)
         self.save_report(accounts_table, all_statements_rows, all_pos_rows, filename="pasha_report.xlsx")
+        return True
