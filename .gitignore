@@ -1,0 +1,5 @@
+./.idea
+./.venv
+./src/MULTI_BANK_LOGGER.log
+./src/pasha.png
+./src/db/bank.db
