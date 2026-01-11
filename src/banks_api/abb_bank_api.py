@@ -97,7 +97,7 @@ class AbbBankAPI:
 
 
     def get_account_statement(self, date_from: str, date_to: str,
-                                  page: int = 1, page_size: int = 10) -> list[dict[str, str]]:
+                                  page: int = 1, page_size: int = 100) -> list[dict[str, str]]:
         """
         Fetches account statements.
 
@@ -267,7 +267,7 @@ class AbbBankAPI:
                         cell.font = Font(bold=True)
                         cell.fill = PatternFill(start_color="BDD7EE", end_color="BDD7EE", fill_type="solid")
 
-                    current_row += 1
+                    # current_row += 1
                     for idx, header in enumerate(headers, start=1):
                         ws_statements.cell(row=current_row, column=idx, value=str(combined_info[header]))
 

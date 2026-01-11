@@ -50,7 +50,7 @@ def run_background(func, *args):
         messagebox.showwarning("Busy", "Another request is already running")
         return None
 
-    messagebox.showinfo("Info", "ABB request sent to background")
+    messagebox.showinfo("Info", "Request sent to background")
 
     background_busy = True
     future = executor.submit(func, *args)

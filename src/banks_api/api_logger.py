@@ -2,8 +2,6 @@ import logging.handlers
 import time
 
 def setup_api_logger(api_type: str):
-    time.tzset()
-
     handler = logging.handlers.WatchedFileHandler(f"{api_type}.log")
     formatter = logging.Formatter(
         f'%(asctime)s {api_type} [%(process)d]: %(message)s',
